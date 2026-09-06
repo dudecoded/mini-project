@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Handspeak — sentence to sign translator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1B1E2E;
+    --bg:#000000;
+    --bg-panel:#000000;
+    --paper:#FBF3E7;
+    --paper-dim:#EFE4D2;
+    --gold:#E3A23D;
+    --teal:#3FA9A0;
+    --muted:#9AA0C0;
+    --line: rgba(251,243,231,0.22);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background: #000000;
+    color:var(--paper);
+    font-family:'Work Sans', sans-serif;
+    min-height:100vh;
+  }
+  .wrap{
+    max-width:920px;
+    margin:0 auto;
+    padding: 56px 24px 80px;
+  }
+  header{
+    margin-bottom:40px;
+  }
+  .kicker{
+    font-size:13px;
+    color:var(--gold);
+    letter-spacing:0.02em;
+    margin:0 0 14px;
+  }
+  h1{
+    font-family:'Fraunces', serif;
+    font-optical-sizing:auto;
+    font-weight:500;
+    font-size:clamp(34px, 5vw, 54px);
+    line-height:1.08;
+    margin:0 0 18px;
+    max-width:14ch;
+  }
+  h1 em{
+    font-style:italic;
+    color:var(--gold);
+  }
+  .lede{
+    color:var(--muted);
+    font-size:16.5px;
+    line-height:1.6;
+    max-width:56ch;
+    margin:0;
+  }
+
+  .panel{
+    background: var(--bg-panel);
+    border:1px solid var(--line);
+    border-radius:18px;
+    padding:28px;
+    margin-top:36px;
+  }
+  label.field-label{
+    display:block;
+    font-size:13px;
+    color:var(--muted);
+    margin-bottom:10px;
+  }
+  textarea{
+    width:100%;
+    resize:vertical;
+    min-height:88px;
+    background:rgba(251,243,231,0.05);
+    border:1px solid var(--line);
+    border-radius:12px;
+    color:var(--paper);
+    font-family:'Work Sans', sans-serif;
+    font-size:17px;
+    padding:14px 16px;
+    line-height:1.5;
+  }
+  textarea:focus{
+    outline:none;
+    border-color:var(--gold);
+  }
+  .controls{
+    display:flex;
+    align-items:center;
+    gap:14px;
+    margin-top:16px;
+    flex-wrap:wrap;
+  }
+  button.translate{
+    background:var(--gold);
+    color:#241A08;
+    border:none;
+    border-radius:999px;
+    font-family:'Work Sans', sans-serif;
+    font-weight:600;
+    font-size:15px;
+    padding:12px 26px;
+    cursor:pointer;
+    transition: transform 0.15s ease;
+  }
+  button.translate:hover{ transform: translateY(-1px); }
+  button.translate:active{ transform: translateY(0); }
+  .hint{
+    font-size:13px;
+    color:var(--muted);
+  }
+
+  .output{
+    margin-top:44px;
+  }
+  .output-label{
+    font-size:13px;
+    color:var(--muted);
+    margin-bottom:16px;
+  }
+  .stream{
+    display:flex;
+    flex-wrap:wrap;
+    gap:14px;
+    align-items:flex-end;
+  }
+
+  /* whole-word sign tile */
+  .sign-tile{
+    background: var(--paper);
+    border-radius:16px;
+    padding:16px 14px 12px;
+    width:112px;
+    text-align:center;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.28);
+    border-bottom: 3px solid var(--teal);
+  }
+  .sign-tile .icon{ height:64px; display:flex; align-items:center; justify-content:center; }
+  .sign-tile .word{
+    margin-top:8px;
+    font-size:12.5px;
+    font-weight:600;
+    color:var(--ink);
+    letter-spacing:0.01em;
+  }
+  .sign-tile .tag{
+    font-size:10px;
+    color:var(--teal);
+    margin-top:2px;
+    font-weight:600;
+  }
+
+  /* fingerspelled word group */
+  .spell-group{
+    background: rgba(251,243,231,0.04);
+    border:1px dashed var(--line);
+    border-radius:16px;
+    padding:14px 12px 10px;
+  }
+  .spell-group .letters{
+    display:flex;
+    gap:6px;
+  }
+  .letter-tile{
+    background: var(--paper);
+    border-radius:10px;
+    width:52px;
+    height:64px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .spell-group .word{
+    margin-top:8px;
+    font-size:11.5px;
+    color:var(--muted);
+    text-align:center;
+    letter-spacing:0.06em;
+  }
+
+  .punct-tile{
+    width:36px;
+    height:64px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:var(--muted);
+    font-size:22px;
+    font-family:'Fraunces', serif;
+  }
+
+  footer{
+    margin-top:40px;
+    padding-top:24px;
+    border-top:1px solid var(--line);
+    font-size:12.5px;
+    color:var(--muted);
+    line-height:1.6;
+  }
+  footer a{ color: var(--gold); }
+
+  .empty-state{
+    color:var(--muted);
+    font-size:14px;
+    font-style:italic;
+  }
+
+  @media (max-width:480px){
+    .wrap{ padding:40px 16px 60px; }
+    .panel{ padding:20px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <p class="kicker">sentence → sign</p>
+    <h1>Turn a sentence into <em>hand shapes.</em></h1>
+    <p class="lede">Type a sentence below. Every word gets spelled out letter by letter, hand shape by hand shape.</p>
+  </header>
+
+  <div class="panel">
+    <label class="field-label" for="sentence-input">Your sentence</label>
+    <textarea id="sentence-input" placeholder="e.g. Hello, my name is Sam">Hello, thank you for the help</textarea>
+    <div class="controls">
+      <button class="translate" id="translate-btn">Translate to signs</button>
+      <span class="hint" id="word-count-hint"></span>
+    </div>
+  </div>
+
+  <div class="output">
+    <p class="output-label">Sign-by-sign</p>
+    <div class="stream" id="output-stream"></div>
+  </div>
+
+  <footer>
+    made by Kaushal and Uzair
+   </footer>
+</div>
+
+<script>
+
+const ALPHABET = {
+  A: { thumb:'side',   fingers:['down','down','down','down'] },
+  B: { thumb:'across', fingers:['up','up','up','up'] },
+  C: { thumb:'side',   fingers:['up','up','up','up'], curved:true },
+  D: { thumb:'side',   fingers:['up','down','down','down'] },
+  E: { thumb:'across', fingers:['down','down','down','down'], curved:true },
+  F: { thumb:'side',   fingers:['down','up','up','up'] },
+  G: { thumb:'side',   fingers:['up','down','down','down'] },
+  H: { thumb:'hidden', fingers:['up','up','down','down'] },
+  I: { thumb:'hidden', fingers:['down','down','down','up'] },
+  J: { thumb:'hidden', fingers:['down','down','down','up'], motion:true },
+  K: { thumb:'side',   fingers:['up','up','down','down'] },
+  L: { thumb:'side',   fingers:['up','down','down','down'] },
+  M: { thumb:'hidden', fingers:['down','down','down','down'] },
+  N: { thumb:'hidden', fingers:['down','down','down','down'] },
+  O: { thumb:'side',   fingers:['up','up','up','up'], curved:true },
+  P: { thumb:'side',   fingers:['up','up','down','down'] },
+  Q: { thumb:'side',   fingers:['up','down','down','down'] },
+  R: { thumb:'hidden', fingers:['up','up','down','down'], crossed:true },
+  S: { thumb:'across', fingers:['down','down','down','down'] },
+  T: { thumb:'side',   fingers:['down','down','down','down'] },
+  U: { thumb:'hidden', fingers:['up','up','down','down'] },
+  V: { thumb:'hidden', fingers:['up','up','down','down'], spread:true },
+  W: { thumb:'hidden', fingers:['up','up','up','down'] },
+  X: { thumb:'hidden', fingers:['hook','down','down','down'] },
+  Y: { thumb:'up',     fingers:['down','down','down','up'] },
+  Z: { thumb:'hidden', fingers:['up','down','down','down'], motion:true },
+};
+
+// A small dictionary of common whole-word signs, rendered as
+// distinct illustrative icons (not literal ASL movement diagrams).
+const WORD_ICON = {
+  HELLO: wave, HI: wave,
+  THANKS: thanksIcon, THANK: thanksIcon,
+  PLEASE: heartCircle,
+  YES: thumbUp,
+  NO: crossHand,
+  SORRY: heartCircle,
+  LOVE: heart,
+  GOOD: thumbUp,
+  BAD: thumbDown,
+  FRIEND: linkedHands,
+  HELP: openPalmUp,
+  NAME: tagIcon,
+  MORE: dots,
+  I: pointSelf, ME: pointSelf,
+  YOU: pointOut,
+  WE: linkedHands,
+};
+
+const NS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs){
+  const el = document.createElementNS(NS, tag);
+  for(const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+
+// Builds a schematic hand icon for one letter's config.
+function buildHandSVG(cfg){
+  const svg = svgEl('svg', {viewBox:'0 0 64 76', width:'40', height:'48'});
+  const ink = '#1B1E2E';
+
+  // palm
+  svg.appendChild(svgEl('rect', {
+    x:16, y:34, width:32, height:34, rx:12, fill:ink, opacity:0.92
+  }));
+
+  // fingers: index, middle, ring, pinky across the top of the palm
+  const baseX = [20, 28, 36, 44];
+  const widths = [6.5, 7, 6.5, 5.5];
+  const lens = [26, 30, 27, 22];
+  const labels = cfg.fingers;
+
+  labels.forEach((state, i) => {
+    const x = baseX[i] - widths[i]/2;
+    const w = widths[i];
+    if(state === 'up'){
+      let d;
+      if(cfg.curved){
+        const tipX = baseX[i] + (i < 1.5 ? 3 : -3);
+        d = `M ${x} 36 L ${x} ${36 - lens[i] + 10} Q ${baseX[i]} ${36 - lens[i] - 2} ${tipX} ${36 - lens[i] + 10} L ${tipX} 36 Z`;
+      } else {
+        const top = 36 - lens[i];
+        d = `M ${x} 36 L ${x} ${top+6} Q ${x} ${top} ${x+w/2} ${top} Q ${x+w} ${top} ${x+w} ${top+6} L ${x+w} 36 Z`;
+      }
+      const rotate = cfg.spread ? (i===0?-8:i===1?8:0) : (cfg.crossed && i===1 ? -10 : 0);
+      const g = svgEl('g', {transform: rotate ? `rotate(${rotate} ${baseX[i]} 36)`:''});
+      g.appendChild(svgEl('path', {d, fill:ink}));
+      svg.appendChild(g);
+    } else if(state === 'hook'){
+      const top = 36 - lens[i]*0.55;
+      const d = `M ${x} 36 L ${x} ${top+8} Q ${x-2} ${top-4} ${x+w+2} ${top} L ${x+w} 36 Z`;
+      svg.appendChild(svgEl('path', {d, fill:ink}));
+    } else {
+      // down / curled — small knuckle bump only
+      svg.appendChild(svgEl('rect', {x:x-1, y:30, width:w+2, height:8, rx:3, fill:ink}));
+    }
+  });
+
+  // thumb
+  const tState = cfg.thumb;
+  if(tState === 'up'){
+    svg.appendChild(svgEl('path', {
+      d:'M 15 46 Q 4 40 6 30 Q 7 26 11 28 Q 14 34 18 40 Z', fill:ink
+    }));
+  } else if(tState === 'side'){
+    svg.appendChild(svgEl('path', {
+      d:'M 16 44 Q 4 42 4 36 Q 4 32 9 33 Q 15 35 19 40 Z', fill:ink
+    }));
+  } else if(tState === 'across'){
+    svg.appendChild(svgEl('rect', {x:14, y:40, width:24, height:8, rx:4, fill:ink}));
+  }
+  // hidden: draw nothing extra
+
+  // motion arc for J / Z
+  if(cfg.motion){
+    const arc = svgEl('path', {
+      d:'M 44 20 Q 54 26 46 34', stroke:'#E3A23D', 'stroke-width':2.4,
+      fill:'none', 'stroke-linecap':'round', 'stroke-dasharray':'3 4'
+    });
+    svg.appendChild(arc);
+  }
+
+  return svg;
+}
+
+// ---- simple word-icon builders (heart, wave, thumbs, etc.) ----
+function baseIcon(paths, viewBox='0 0 64 64'){
+  const svg = svgEl('svg', {viewBox, width:'40', height:'40'});
+  paths.forEach(p => svg.appendChild(svgEl('path', p)));
+  return svg;
+}
+function heart(){
+  return baseIcon([{d:'M32 54 C10 40 6 24 18 16 C25 11 32 15 32 22 C32 15 39 11 46 16 C58 24 54 40 32 54 Z', fill:'#3FA9A0'}]);
+}
+function heartCircle(){
+  const svg = svgEl('svg', {viewBox:'0 0 64 64', width:'40', height:'40'});
+  svg.appendChild(svgEl('circle', {cx:32, cy:32, r:26, fill:'none', stroke:'#3FA9A0', 'stroke-width':3}));
+  svg.appendChild(svgEl('path', {d:'M32 40 C21 33 19 24 26 19.5 C29 17.5 32 20 32 24 C32 20 35 17.5 38 19.5 C45 24 43 33 32 40 Z', fill:'#3FA9A0'}));
+  return svg;
+}
+function wave(){
+  return baseIcon([{d:'M20 52 V34 Q20 20 34 20 Q46 20 46 32 V46', stroke:'#3FA9A0','stroke-width':5, fill:'none', 'stroke-linecap':'round'},
+    {d:'M46 32 Q52 30 52 38 Q52 44 46 44', stroke:'#3FA9A0','stroke-width':5, fill:'none', 'stroke-linecap':'round'}]);
+}
+function thanksIcon(){
+  const svg = svgEl('svg', {viewBox:'0 0 64 64', width:'40', height:'40'});
+  svg.appendChild(svgEl('path', {d:'M20 44 Q32 30 44 20', stroke:'#3FA9A0','stroke-width':5, fill:'none','stroke-linecap':'round'}));
+  svg.appendChild(svgEl('path', {d:'M36 18 L44 20 L42 28', stroke:'#3FA9A0','stroke-width':5, fill:'none','stroke-linecap':'round','stroke-linejoin':'round'}));
+  return svg;
+}
+function thumbUp(){
+  return baseIcon([{d:'M22 30 L22 50 L14 50 L14 30 Z', fill:'#3FA9A0'},
+    {d:'M22 32 L30 14 Q33 10 36 14 Q37 17 34 22 L44 22 Q50 22 48 28 L44 42 Q42 50 34 50 L22 50 Z', fill:'#3FA9A0'}]);
+}
+function thumbDown(){
+  return baseIcon([{d:'M22 34 L22 14 L14 14 L14 34 Z', fill:'#C7645F'},
+    {d:'M22 32 L30 50 Q33 54 36 50 Q37 47 34 42 L44 42 Q50 42 48 36 L44 22 Q42 14 34 14 L22 14 Z', fill:'#C7645F'}]);
+}
+function crossHand(){
+  const svg = svgEl('svg', {viewBox:'0 0 64 64', width:'40', height:'40'});
+  svg.appendChild(svgEl('line', {x1:18,y1:18,x2:46,y2:46, stroke:'#C7645F','stroke-width':5,'stroke-linecap':'round'}));
+  svg.appendChild(svgEl('line', {x1:46,y1:18,x2:18,y2:46, stroke:'#C7645F','stroke-width':5,'stroke-linecap':'round'}));
+  return svg;
+}
+function linkedHands(){
+  const svg = svgEl('svg', {viewBox:'0 0 64 64', width:'40', height:'40'});
+  svg.appendChild(svgEl('circle', {cx:24, cy:32, r:12, fill:'none', stroke:'#3FA9A0','stroke-width':4}));
+  svg.appendChild(svgEl('circle', {cx:40, cy:32, r:12, fill:'none', stroke:'#3FA9A0','stroke-width':4}));
+  return svg;
+}
+function openPalmUp(){
+  return baseIcon([{d:'M18 50 V28 Q18 24 21 24 Q24 24 24 28 V20 Q24 16 27 16 Q30 16 30 20 V28 Q30 22 33 22 Q36 22 36 26 V30 Q36 26 39 26 Q42 26 42 30 V44 Q42 50 36 50 Z', fill:'#3FA9A0'}]);
+}
+function tagIcon(){
+  const svg = svgEl('svg', {viewBox:'0 0 64 64', width:'40', height:'40'});
+  svg.appendChild(svgEl('path', {d:'M16 32 L32 16 L48 20 L44 36 L28 48 Z', fill:'none', stroke:'#3FA9A0','stroke-width':3.5}));
+  svg.appendChild(svgEl('circle', {cx:38, cy:24, r:3, fill:'#3FA9A0'}));
+  return svg;
+}
+function dots(){
+  const svg = svgEl('svg', {viewBox:'0 0 64 64', width:'40', height:'40'});
+  [18,32,46].forEach(x=> svg.appendChild(svgEl('circle', {cx:x, cy:32, r:5, fill:'#3FA9A0'})));
+  return svg;
+}
+function pointSelf(){
+  return baseIcon([{d:'M32 46 V22', stroke:'#3FA9A0','stroke-width':5,'stroke-linecap':'round'},
+    {d:'M24 30 L32 22 L40 30', stroke:'#3FA9A0','stroke-width':5,'stroke-linecap':'round', fill:'none'}]);
+}
+function pointOut(){
+  return baseIcon([{d:'M18 32 H46', stroke:'#3FA9A0','stroke-width':5,'stroke-linecap':'round'},
+    {d:'M38 24 L46 32 L38 40', stroke:'#3FA9A0','stroke-width':5,'stroke-linecap':'round', fill:'none'}]);
+}
+
+// ---------------------------------------------------------------
+function tokenizeSentence(sentence){
+  // split into words + standalone punctuation, keep order
+  const matches = sentence.match(/[A-Za-z']+|[.,!?;:]/g) || [];
+  return matches;
+}
+
+function render(sentence){
+  const stream = document.getElementById('output-stream');
+  stream.innerHTML = '';
+  const tokens = tokenizeSentence(sentence.trim());
+
+  if(tokens.length === 0){
+    const p = document.createElement('p');
+    p.className = 'empty-state';
+    p.textContent = 'Type a sentence above and press Translate to see it here.';
+    stream.appendChild(p);
+    document.getElementById('word-count-hint').textContent = '';
+    return;
+  }
+
+  let wordCount = 0;
+  tokens.forEach(tok => {
+    if(/^[.,!?;:]$/.test(tok)){
+      const div = document.createElement('div');
+      div.className = 'punct-tile';
+      div.textContent = tok;
+      stream.appendChild(div);
+      return;
+    }
+    wordCount++;
+    const upper = tok.toUpperCase();
+    {
+      const group = document.createElement('div');
+      group.className = 'spell-group';
+      const letters = document.createElement('div');
+      letters.className = 'letters';
+      for(const ch of upper){
+        const cfg = ALPHABET[ch];
+        if(!cfg) continue;
+        const lt = document.createElement('div');
+        lt.className = 'letter-tile';
+        lt.appendChild(buildHandSVG(cfg));
+        letters.appendChild(lt);
+      }
+      const word = document.createElement('div');
+      word.className = 'word';
+      word.textContent = tok.toUpperCase() + ' · fingerspelled';
+      group.appendChild(letters);
+      group.appendChild(word);
+      stream.appendChild(group);
+    }
+  });
+
+  document.getElementById('word-count-hint').textContent =
+    wordCount + (wordCount === 1 ? ' word translated' : ' words translated');
+}
+
+document.getElementById('translate-btn').addEventListener('click', () => {
+  render(document.getElementById('sentence-input').value);
+});
+document.getElementById('sentence-input').addEventListener('keydown', (e) => {
+  if(e.key === 'Enter' && (e.metaKey || e.ctrlKey)){
+    render(document.getElementById('sentence-input').value);
+  }
+});
+
+// initial render
+render(document.getElementById('sentence-input').value);
+</script>
+</body>
+</html>
