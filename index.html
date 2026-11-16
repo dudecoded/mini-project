@@ -248,6 +248,8 @@
   details.train{margin-top:22px;border-top:1px solid var(--line);padding-top:16px}
   details.train summary{color:var(--gold);cursor:pointer;font-size:15px}
   details.train .controls{margin-top:12px}
+  #t-word{background:#111;color:var(--paper);border:1px solid var(--line);border-radius:8px;padding:9px 12px;font:inherit;min-width:210px}
+  .letter-tile.photo.wide{width:130px;height:130px}
   .counts{font-size:12.5px;color:var(--muted);margin-top:12px;line-height:1.7;white-space:pre-line}
 </style>
 </head>
@@ -300,10 +302,13 @@
       <summary>Train on your own hand</summary>
       <p class="hint" style="margin-top:12px">Pick a letter, make the shape, press Record, and hold it for 3 seconds while moving your hand a little. Repeat for each letter. With two or more letters trained, the page uses the samples instead of the built-in rules. Samples you record are added to any that ship with the project.</p>
       <div class="controls"><select id="t-letter" aria-label="Letter to record"></select><button class="ghost" id="t-rec">Record 3 s</button><span class="hint" id="t-mode"></span></div>
+      <div class="controls"><input id="t-word" type="text" maxlength="20" placeholder="Custom word, e.g. hello" aria-label="Custom word"><button class="ghost" id="t-addword">Add word &amp; record 3 s</button></div>
+      <p class="hint">A custom word is one held hand shape. Add a photo named after it (for example <b>hello.jpg</b>) to the alphabet folder to show it in text → sign.</p>
       <div class="counts" id="t-counts"></div>
       <div class="controls">
         <button class="ghost" id="t-exp">Export samples</button>
         <label class="ghost">Import samples<input type="file" id="t-imp" accept=".json" hidden></label>
+        <button class="ghost" id="t-del">Delete selected</button>
         <button class="ghost" id="t-clr">Delete my samples</button>
       </div>
     </details>
@@ -551,6 +556,47 @@ function letterImage(ch, tile){
   tile.appendChild(img); tile.appendChild(tag);
 }
 
+function spellGroup(tok){
+  const group = document.createElement('div');
+  group.className = 'spell-group';
+  const letters = document.createElement('div');
+  letters.className = 'letters';
+  for(const ch of tok.toUpperCase()){
+    if(!ALPHABET[ch]) continue;
+    const lt = document.createElement('div');
+    lt.className = 'letter-tile';
+    letterImage(ch, lt);
+    letters.appendChild(lt);
+  }
+  const word = document.createElement('div');
+  word.className = 'word';
+  word.textContent = tok.toUpperCase() + ' · fingerspelled';
+  group.appendChild(letters);
+  group.appendChild(word);
+  return group;
+}
+// A custom word shows its own photo (alphabet/<word>.jpg); without a photo it is fingerspelled instead.
+function wordGroup(tok){
+  const group = document.createElement('div');
+  group.className = 'spell-group';
+  const tile = document.createElement('div');
+  tile.className = 'letter-tile photo wide';
+  const names = [];
+  for(const c of [tok.toLowerCase(), tok.toUpperCase()]) for(const e of ['jpg','jpeg','png']) names.push(IMG_DIR + '/' + c + '.' + e);
+  let i = 0;
+  const img = new Image();
+  img.alt = 'Sign for ' + tok;
+  img.onerror = () => { if(++i < names.length) img.src = names[i]; else group.replaceWith(spellGroup(tok)); };
+  img.src = names[0];
+  tile.appendChild(img);
+  const word = document.createElement('div');
+  word.className = 'word';
+  word.textContent = tok.toUpperCase() + ' · custom sign';
+  group.appendChild(tile);
+  group.appendChild(word);
+  return group;
+}
+
 function render(sentence){
   const stream = document.getElementById('output-stream');
   stream.innerHTML = '';
@@ -576,26 +622,7 @@ function render(sentence){
     }
     wordCount++;
     const upper = tok.toUpperCase();
-    {
-      const group = document.createElement('div');
-      group.className = 'spell-group';
-      const letters = document.createElement('div');
-      letters.className = 'letters';
-      for(const ch of upper){
-        const cfg = ALPHABET[ch];
-        if(!cfg) continue;
-        const lt = document.createElement('div');
-        lt.className = 'letter-tile';
-        letterImage(ch, lt);
-        letters.appendChild(lt);
-      }
-      const word = document.createElement('div');
-      word.className = 'word';
-      word.textContent = tok.toUpperCase() + ' · fingerspelled';
-      group.appendChild(letters);
-      group.appendChild(word);
-      stream.appendChild(group);
-    }
+    stream.appendChild((window.hsWords||[]).includes(tok.toLowerCase()) ? wordGroup(tok) : spellGroup(tok));
   });
 
   document.getElementById('word-count-hint').textContent =
@@ -620,7 +647,7 @@ const ta=$('sentence-input');
 function setTab(cam){
   $('pane-text').hidden=cam; $('out-wrap').hidden=cam; $('pane-cam').hidden=!cam;
   $('tab-text').setAttribute('aria-selected',!cam); $('tab-cam').setAttribute('aria-selected',cam);
-  if(!cam) stopCam(); else if(listening) rec.stop();
+  if(!cam) stopCam(); else if(wantMic){ wantMic=false; if(rec) rec.stop(); }
 }
 $('tab-text').onclick=()=>setTab(false); $('tab-cam').onclick=()=>setTab(true);
 
@@ -634,24 +661,49 @@ const MIC_ERR={
   'network':'The speech service could not be reached. It needs internet and works in Chrome or Edge, but not in Brave or on some school/VPN networks.',
   'language-not-supported':'That language is not supported here.'
 };
-$('mic-btn').onclick=()=>{
+let wantMic=false, micStart=0, quick=0, micDone='';
+const FATAL=['not-allowed','service-not-allowed','audio-capture','network','language-not-supported'];
+function micIdle(){ listening=false; $('mic-btn').classList.remove('on'); $('mic-btn').textContent='Speak'; }
+function micBegin(){
+  const ms=$('mic-status');
+  rec=new SR(); rec.lang=$('lang').value; rec.continuous=true; rec.interimResults=true;
+  rec.onstart=()=>{ micStart=Date.now(); listening=true; $('mic-btn').classList.add('on'); $('mic-btn').textContent='Stop'; ms.textContent='Listening… speak now'; };
+  rec.onresult=e=>{
+    quick=0; let live='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const r=e.results[i]; if(r.isFinal) micDone+=r[0].transcript+' '; else live+=r[0].transcript;
+    }
+    ta.value=(micDone+live).trim(); render(ta.value);
+  };
+  rec.onerror=e=>{
+    if(FATAL.includes(e.error)){ wantMic=false; ms.textContent=MIC_ERR[e.error]||'Voice error: '+e.error; }
+    else if(e.error!=='aborted'&&e.error!=='no-speech') ms.textContent='Voice error: '+e.error;
+  };
+  rec.onend=()=>{
+    micIdle();
+    if(!wantMic){ if(ms.textContent.startsWith('Listening')) ms.textContent='Stopped.'; return; }
+    // the browser ended the session by itself (desktop Chrome does this after silence): start again
+    quick = Date.now()-micStart<800 ? quick+1 : 0;
+    if(quick>=3){ wantMic=false; ms.textContent='The microphone keeps closing right away. Check that the right input is selected and no other app is using it (Windows: Settings > Privacy > Microphone).'; return; }
+    try{ micBegin(); }catch(err){ wantMic=false; ms.textContent='Could not restart the microphone: '+err.message; }
+  };
+  rec.start();
+}
+$('mic-btn').onclick=async()=>{
   const ms=$('mic-status');
   if(!SR){ ms.textContent='This browser has no speech recognition. Use Chrome or Edge.'; return; }
   if(!window.isSecureContext){ ms.textContent='Voice input needs https or localhost, not a file opened from disk.'; return; }
-  if(listening){ rec.stop(); return; }
-  rec=new SR(); rec.lang=$('lang').value; rec.continuous=true; rec.interimResults=true;
-  let done='';
-  rec.onstart=()=>{ listening=true; $('mic-btn').classList.add('on'); $('mic-btn').textContent='Stop'; ms.textContent='Listening… speak now'; };
-  rec.onresult=e=>{
-    let live='';
-    for(let i=e.resultIndex;i<e.results.length;i++){
-      const r=e.results[i]; if(r.isFinal) done+=r[0].transcript+' '; else live+=r[0].transcript;
+  if(wantMic||listening){ wantMic=false; if(rec) rec.stop(); return; }
+  try{   // ask for the microphone first: gives a clear message when it is blocked, missing or busy
+    if(navigator.mediaDevices&&navigator.mediaDevices.getUserMedia){
+      const st=await navigator.mediaDevices.getUserMedia({audio:true}); st.getTracks().forEach(t=>t.stop());
     }
-    ta.value=(done+live).trim(); render(ta.value);
-  };
-  rec.onerror=e=>{ if(e.error!=='aborted') ms.textContent=MIC_ERR[e.error]||'Voice error: '+e.error; };
-  rec.onend=()=>{ listening=false; $('mic-btn').classList.remove('on'); $('mic-btn').textContent='Speak'; if(ms.textContent.startsWith('Listening')) ms.textContent='Stopped.'; };
-  try{ rec.start(); }catch(err){ ms.textContent='Could not start the microphone: '+err.message; }
+  }catch(err){
+    ms.textContent=err.name==='NotAllowedError'?MIC_ERR['not-allowed']:err.name==='NotFoundError'?MIC_ERR['audio-capture']:err.name==='NotReadableError'?'The microphone is busy in another app or tab (Teams, Zoom, etc.). Close it and try again.':'Microphone error: '+(err.message||err.name);
+    return;
+  }
+  micDone=''; quick=0; wantMic=true;
+  try{ micBegin(); }catch(err){ wantMic=false; ms.textContent='Could not start the microphone: '+err.message; }
 };
 
 // ======================= Sign → text (hand landmarks → letters) =======================
@@ -715,7 +767,9 @@ function show(){
   });
 }
 function commit(l){
-  if(l==='SPACE'){ if(text&&!text.endsWith(' ')) text+=' '; } else text+=l.toLowerCase();
+  if(l==='SPACE'){ if(text&&!text.endsWith(' ')) text+=' '; }
+  else if(l.startsWith('word:')){ if(text&&!text.endsWith(' ')) text+=' '; text+=l.slice(5)+' '; }
+  else text+=l.toLowerCase();
   show();
 }
 
@@ -752,7 +806,7 @@ function step(a){
     if(p>=1){ commit(lab); locked=lab; p=0; }
   }
   $('prog').style.width=(p*100)+'%';
-  $('det').textContent=lab?(lab==='Zp'?'Z?':lab==='SPACE'?'␣':lab):'–';
+  $('det').textContent=lab?(lab==='Zp'?'Z?':lab==='SPACE'?'␣':lab.startsWith('word:')?lab.slice(5):lab):'–';
   $('debug-line').textContent=a?`${trained()?'model':'rules'}  fingers ${a.st.join('')}  thumb ${a.out?'out':'in'}  pinch ${a.pinch.toFixed(2)}  t ${a.t.toFixed(2)}  ${a.ori}`:'no hand';
 }
 
@@ -822,8 +876,9 @@ function knn(a){
   return votes[best]>=Math.ceil(K/2)?best:'';
 }
 function refresh(){
-  rebuild();
-  const c=Object.keys(POOL).sort().map(L=>`${L} ${POOL[L].length}`).join('  ·  ');
+  rebuild(); fillSelect();
+  window.hsWords=Object.keys(POOL).filter(k=>k.startsWith('word:')&&POOL[k].length>=MIN_PER).map(k=>k.slice(5));
+  const c=Object.keys(POOL).sort().map(L=>`${L.startsWith('word:')?'“'+L.slice(5)+'”':L} ${POOL[L].length}`).join('  ·  ');
   const nb=Object.keys(BASE).length;
   $('t-counts').textContent=(c||'No samples yet.')+(nb?`\nIncludes ${nb} letters from the project's samples.json`:'');
   $('t-mode').textContent=trained()?'Using the trained model':'Using built-in rules';
@@ -833,7 +888,13 @@ fetch('samples.json').then(r=>r.ok?r.json():{}).then(d=>{
   refresh();
 }).catch(()=>{});
 const sel=$('t-letter');
-'ABCDEFGHIKLMNOPQRSTUVWXY'.split('').concat(['SPACE']).forEach(L=>{const o=document.createElement('option'); o.value=L; o.textContent=L==='SPACE'?'Space (open hand)':L; sel.appendChild(o);});
+function fillSelect(){
+  const cur=sel.value; sel.innerHTML='';
+  const add=(v,t)=>{const o=document.createElement('option'); o.value=v; o.textContent=t; sel.appendChild(o);};
+  'ABCDEFGHIKLMNOPQRSTUVWXY'.split('').forEach(L=>add(L,L)); add('SPACE','Space (open hand)');
+  Object.keys(POOL).filter(k=>k.startsWith('word:')).sort().forEach(k=>add(k,'Word: '+k.slice(5)));
+  if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
+}
 let trn=null;
 $('t-rec').onclick=()=>{
   if(!running){ $('t-mode').textContent='Start the camera first.'; return; }
@@ -846,8 +907,17 @@ function trainTick(a,now){
   if(DB[trn.L]&&DB[trn.L].length>400) DB[trn.L]=DB[trn.L].slice(-400);
   save(); $('t-rec').textContent='Record 3 s'; refresh();
   if(!trn.n) $('t-mode').textContent='No hand seen while recording. Try again.';
+  else if(DB[trn.L]) sel.value=trn.L;
   trn=null;
 }
+$('t-addword').onclick=()=>{
+  const w=$('t-word').value.trim().toLowerCase();
+  if(!/^[a-z]{2,20}$/.test(w)){ $('t-mode').textContent='Use 2 to 20 letters, no spaces.'; return; }
+  if(!running){ $('t-mode').textContent='Start the camera first.'; return; }
+  trn={L:'word:'+w,until:performance.now()+3000,n:0};
+  $('t-mode').textContent='Recording “'+w+'”… hold the sign.';
+};
+$('t-del').onclick=()=>{ if(DB[sel.value]&&confirm('Delete your samples for '+sel.options[sel.selectedIndex].text+'?')){ delete DB[sel.value]; save(); refresh(); } };
 $('t-exp').onclick=()=>{
   const u=URL.createObjectURL(new Blob([JSON.stringify(DB)],{type:'application/json'}));
   const l=document.createElement('a'); l.href=u; l.download='handspeak-samples.json'; l.click(); URL.revokeObjectURL(u);
