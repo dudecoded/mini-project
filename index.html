@@ -684,6 +684,10 @@ function setTab(cam){
   if(!cam) stopCam(); else if(wantMic){ wantMic=false; if(rec) rec.stop(); }
 }
 $('tab-text').onclick=()=>setTab(false); $('tab-cam').onclick=()=>setTab(true);
+document.querySelectorAll('.nav-links a').forEach(link=>link.addEventListener('click',()=>{
+  if(link.getAttribute('href')==='#camera-tools'||link.getAttribute('href')==='#model-training') setTab(true);
+  if(link.getAttribute('href')==='#text-tools') setTab(false);
+}));
 
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 let rec=null, listening=false;
@@ -935,7 +939,7 @@ function refresh(){
   const c=Object.keys(POOL).sort().map(L=>`${L.startsWith('word:')?'“'+L.slice(5)+'”':L} ${POOL[L].length}`).join('  ·  ');
   const nb=Object.keys(BASE).length;
   $('t-counts').textContent=(c||'No samples yet.')+(nb?`\nIncludes ${nb} letters from the project's samples.json`:'');
-  $('t-mode').textContent=trained()?'Using the trained model':'Using built-in rules';
+  $('t-mode').textContent=trained()?'Using trained samples (low-confidence poses are rejected)':'Using built-in rules · train at least 25 samples for 2 or more classes';
 }
 fetch('samples.json').then(r=>r.ok?r.json():{}).then(d=>{
   // Bundle only alphabet and space classes; custom word classes need deliberate collection and validation.
@@ -954,12 +958,20 @@ function fillSelect(){
 let trn=null;
 $('t-rec').onclick=()=>{
   if(!running){ $('t-mode').textContent='Start the camera first.'; return; }
-  trn={L:sel.value,until:performance.now()+3000,n:0};
+  trn={L:sel.value,until:performance.now()+3000,n:0,lastSample:0};
   $('t-rec').textContent='Recording…';
 };
 function trainTick(a,now){
   if(!trn) return;
-  if(now<trn.until){ if(a){ (DB[trn.L]=DB[trn.L]||[]).push(feat(a)); trn.n++; } return; }
+  if(now<trn.until){
+    // Sample at a fixed interval instead of saving near-identical camera frames.
+    if(a&&now-trn.lastSample>=120){
+      (DB[trn.L]=DB[trn.L]||[]).push(feat(a));
+      if(DB[trn.L].length>400) DB[trn.L]=DB[trn.L].slice(-400);
+      trn.n++;trn.lastSample=now;
+    }
+    return;
+  }
   if(DB[trn.L]&&DB[trn.L].length>400) DB[trn.L]=DB[trn.L].slice(-400);
   save(); $('t-rec').textContent='Record 3 s'; refresh();
   if(!trn.n) $('t-mode').textContent='No hand seen while recording. Try again.';
@@ -970,7 +982,7 @@ $('t-addword').onclick=()=>{
   const w=$('t-word').value.trim().toLowerCase();
   if(!/^[a-z]{2,20}$/.test(w)){ $('t-mode').textContent='Use 2 to 20 letters, no spaces.'; return; }
   if(!running){ $('t-mode').textContent='Start the camera first.'; return; }
-  trn={L:'word:'+w,until:performance.now()+3000,n:0};
+  trn={L:'word:'+w,until:performance.now()+3000,n:0,lastSample:0};
   $('t-mode').textContent='Recording “'+w+'”… hold the sign.';
 };
 $('t-del').onclick=()=>{ if(DB[sel.value]&&confirm('Delete your samples for '+sel.options[sel.selectedIndex].text+'?')){ delete DB[sel.value]; save(); refresh(); } };
