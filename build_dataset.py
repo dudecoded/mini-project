@@ -7,6 +7,9 @@ Usage:
 
 Then open Handspeak > Signs -> text > "Train on your own hand" > Import samples.
 Folders named A-Z are used, 'space' becomes SPACE; 'del' and 'nothing' are skipped.
+This pipeline is for static, single-hand ASL fingerspelling poses only. It is not a
+continuous-sign or two-hand ASL sentence model. Use diverse images and balanced
+class counts; validate with a separate held-out set before relying on predictions.
 The feature function must match feat() in index.html.
 """
 import json, math, random, sys, pathlib
@@ -44,20 +47,37 @@ def main():
     out, rng = {}, random.Random(0)
     for d in sorted(root.iterdir()):
         name = {"space": "SPACE"}.get(d.name.lower(), d.name.upper())
-        if not d.is_dir() or not (len(name) == 1 or name == "SPACE"):
+        if not d.is_dir() or not (len(name) == 1 and name in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" or name == "SPACE"):
             continue
-        files = sorted(d.glob("*.*")); rng.shuffle(files)
+        files = [p for p in d.iterdir() if p.is_file()]
+        rng.shuffle(files)
         rows = []
         for f in files:
-            if len(rows) >= per: break
+            if len(rows) >= per:
+                break
             img = cv2.imread(str(f))
-            if img is None: continue
+            if img is None:
+                continue
             h, w = img.shape[:2]
-            r = det.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(img, cv2.COLOR_BGR2RGB)))
-            if r.hand_landmarks: rows.append(feat(r.hand_landmarks[0], w, h))
+            if min(h, w) < 80:
+                continue
+            # Ignore severely blurred samples; they tend to produce unstable landmarks.
+            if cv2.Laplacian(cv2.cvtColor(img, cv2.COLOR_BGR2GRAY), cv2.CV_64F).var() < 12:
+                continue
+            result = det.detect(mp.Image(
+                image_format=mp.ImageFormat.SRGB,
+                data=cv2.cvtColor(img, cv2.COLOR_BGR2RGB)))
+            if result.hand_landmarks:
+                rows.append(feat(result.hand_landmarks[0], w, h))
         out[name] = rows
-        print(name, len(rows))
+        print(f"{name}: {len(rows)} usable samples")
+    det.close()
+    out = {label: rows for label, rows in out.items() if rows}
+    missing = [label for label in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if len(out.get(label, [])) < 25]
+    if missing:
+        print("Warning: fewer than 25 usable samples for:", ", ".join(missing))
     json.dump(out, open("handspeak-samples.json", "w"))
+    print("Saved handspeak-samples.json. Import it in Handspeak > Signs → text > Train on your own hand.")
 
 
 if __name__ == "__main__":
